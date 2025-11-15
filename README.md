@@ -32,6 +32,31 @@ Logs are generated for each run to track activity.
 - Google Sheets API  
 - Nodemailer  
 
+```bash
+
+## 📧 **Email Examples:**
+
+### **If lesson is TODAY:**
+Subject:  Today's Sunday School
+
+Dear John,
+
+This is a reminderabout the service for today.
+
+📖 LESSON DETAILS:
+Date: 15-11-2025
+1st Lesson: Genesis 1
+2nd Lesson: Matthew 5:1-10
+Topic: Creation
+Teacher: Pastor John
+Hymns: 1, 45, 78
+
+As a teacher, please ensure you're prepared for the lesson.
+
+God bless you,
+CCC Sunday School Team
+```
+
 
 ## 📬 Contact
 If you have questions, reach out at: your.email@example.com

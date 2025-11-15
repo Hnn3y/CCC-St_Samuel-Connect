@@ -1,0 +1,8 @@
+{
+   "crons": [
+     {
+       "path": "/api/sunday-school",
+       "schedule": "0 6 * * 6"
+     }
+   ]
+ }
