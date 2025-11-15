@@ -4,15 +4,15 @@ This system provides the official, weekly Order of Service documents for all Sun
 
 ## Key Features
 
--- Automated data fetching from a Google Sheet or Excel document.
+- Automated data fetching from a Google Sheet or Excel document.
 
--- Email dispatch to one or multiple recipients.
+- Email dispatch to one or multiple recipients.
 
-Scheduled or on-demand triggers for sending messages.
+- Scheduled or on-demand triggers for sending messages.
 
-Error handling and logging for tracking failed operations.
+- Error handling and logging for tracking failed operations.
 
-Scalable architecture suitable for future expansion (SMS, WhatsApp, API events).
+- Scalable architecture suitable for future expansion (SMS, WhatsApp, API events).
 
 ## How It Works
 
