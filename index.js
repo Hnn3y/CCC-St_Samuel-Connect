@@ -1,18 +1,22 @@
 import { google } from "googleapis";
 import { DateTime } from "luxon";
-import pkg from "whatsapp-web.js";
-const { Client, LocalAuth } = pkg;
-import qrcode from "qrcode-terminal";
 
-// ENV VARS: GOOGLE_CLIENT_EMAIL, GOOGLE_PRIVATE_KEY, GOOGLE_PROJECT_ID, GOOGLE_SHEET_ID_SUNDAY
+// ENV VARS:
+// GOOGLE_CLIENT_EMAIL, GOOGLE_PRIVATE_KEY, GOOGLE_PROJECT_ID, GOOGLE_SHEET_ID_SUNDAY
+// WHATSAPP_TOKEN       → your WhatsApp Cloud API token (from Meta Developer portal)
+// WHATSAPP_PHONE_ID    → your WhatsApp phone number ID (from Meta Developer portal)
 const {
   GOOGLE_CLIENT_EMAIL,
   GOOGLE_PRIVATE_KEY,
   GOOGLE_PROJECT_ID,
   GOOGLE_SHEET_ID_SUNDAY,
+  WHATSAPP_TOKEN,
+  WHATSAPP_PHONE_ID,
 } = process.env;
 
 if (!GOOGLE_SHEET_ID_SUNDAY) throw new Error("Missing GOOGLE_SHEET_ID_SUNDAY env variable");
+if (!WHATSAPP_TOKEN)         throw new Error("Missing WHATSAPP_TOKEN env variable");
+if (!WHATSAPP_PHONE_ID)      throw new Error("Missing WHATSAPP_PHONE_ID env variable");
 
 const SHEET_NAMES = {
   MASTER: "CCC SUNDAY SCHOOL",
@@ -37,90 +41,56 @@ const REQUIRED_COLUMNS = {
   ]
 };
 
-// ==== WHATSAPP CLIENT ====
-let clientInstance = null;
-let clientReady = false;
-
-function initWhatsApp() {
-  return new Promise((resolve, reject) => {
-    if (clientReady && clientInstance) {
-      console.log("✅ WhatsApp client already initialised");
-      return resolve(clientInstance);
-    }
-
-    console.log("🔄 Initialising WhatsApp Web client...");
-
-    const client = new Client({
-      authStrategy: new LocalAuth({ dataPath: ".wwebjs_auth" }),
-      puppeteer: {
-        headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-        ],
-      },
-    });
-
-    client.on("qr", (qr) => {
-      console.log("\n" + "=".repeat(60));
-      console.log("📱 WHATSAPP QR CODE — Scan with your phone:");
-      console.log("   WhatsApp → Linked Devices → Link a Device");
-      console.log("=".repeat(60));
-      qrcode.generate(qr, { small: true });
-      console.log("=".repeat(60) + "\n");
-    });
-
-    client.on("ready", () => {
-      console.log("✅ WhatsApp Web client is READY");
-      clientReady = true;
-      resolve(client);
-    });
-
-    client.on("auth_failure", (msg) => {
-      console.error("❌ WhatsApp authentication failed:", msg);
-      clientReady = false;
-      reject(new Error("WhatsApp auth failed: " + msg));
-    });
-
-    client.on("disconnected", (reason) => {
-      console.warn("⚠️  WhatsApp client disconnected:", reason);
-      clientReady = false;
-      clientInstance = null;
-    });
-
-    clientInstance = client;
-    client.initialize();
-  });
-}
-
+// ==== WHATSAPP CLOUD API ====
+// No QR code. No session. No browser. Just HTTP calls.
+// Free via Meta for Developers: https://developers.facebook.com/docs/whatsapp/cloud-api
 async function sendWhatsApp(phoneNumber, message) {
-  if (!clientReady || !clientInstance) {
-    throw new Error("WhatsApp client is not ready. Call initWhatsApp() first.");
+  const to = normaliseToChatId(phoneNumber);
+  console.log(`      → Sending to: ${to}`);
+
+  const res = await fetch(
+    `https://graph.facebook.com/v19.0/${WHATSAPP_PHONE_ID}/messages`,
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to,
+        type: "text",
+        text: { body: message },
+      }),
+    }
+  );
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(
+      `WhatsApp API error: ${data?.error?.message || JSON.stringify(data)}`
+    );
   }
 
-  const chatId = normaliseToChatId(phoneNumber);
-  console.log(`      → WhatsApp Chat ID: ${chatId}`);
-
-  const isRegistered = await clientInstance.isRegisteredUser(chatId);
-  if (!isRegistered) {
-    throw new Error(`Number ${phoneNumber} is not registered on WhatsApp`);
-  }
-
-  await clientInstance.sendMessage(chatId, message);
+  console.log(`      → Message ID: ${data?.messages?.[0]?.id}`);
 }
 
+// Normalises Nigerian phone numbers to E.164 format (required by WhatsApp Cloud API)
+// e.g. 08012345678 → 2348012345678
+//      8012345678  → 2348012345678
+//      +2348012345678 → 2348012345678
 function normaliseToChatId(phone) {
   let clean = phone.replace(/[\s\-().+]/g, "");
 
   if (clean.startsWith("234") && clean.length === 13) {
-    return clean + "@c.us";
+    return clean; // already correct
   } else if (clean.startsWith("0") && clean.length === 11) {
-    return "234" + clean.slice(1) + "@c.us";
+    return "234" + clean.slice(1);
   } else if (clean.length === 10 && /^[789]/.test(clean)) {
-    return "234" + clean + "@c.us";
+    return "234" + clean;
   } else {
-    return clean + "@c.us";
+    return clean;
   }
 }
 
@@ -133,18 +103,13 @@ export async function sundaySchoolSync() {
   console.log('='.repeat(80) + '\n');
   
   try {
-    // 1. Initialise WhatsApp client
-    console.log('📝 STEP 1: Initialising WhatsApp client...');
-    await initWhatsApp();
-    console.log('✅ WhatsApp client ready\n');
-
-    // 2. Authenticate Google Sheets
-    console.log('📝 STEP 2: Authenticating Google Sheets...');
+    // 1. Authenticate Google Sheets
+    console.log('📝 STEP 1: Authenticating Google Sheets...');
     const sheets = await getSheetsClient();
     console.log('✅ Authentication successful\n');
 
-    // 3. Fetch Sunday School schedule
-    console.log('📝 STEP 3: Fetching Sunday School Schedule...');
+    // 2. Fetch Sunday School schedule
+    console.log('📝 STEP 2: Fetching Sunday School Schedule...');
     let { rows: scheduleRows, header: scheduleHeader } = await fetchSheetRows(sheets, SHEET_NAMES.MASTER);
     console.log(`✅ Fetched ${scheduleRows.length} scheduled lessons\n`);
 
@@ -155,8 +120,8 @@ export async function sundaySchoolSync() {
       scheduleHeader = ensuredScheduleHeader;
     }
 
-    // 4. Fetch Recipients
-    console.log('📝 STEP 4: Fetching Recipients...');
+    // 3. Fetch Recipients
+    console.log('📝 STEP 3: Fetching Recipients...');
     let { rows: recipientRows, header: recipientHeader } = await fetchSheetRows(sheets, SHEET_NAMES.RECIPIENTS);
     console.log(`✅ Fetched ${recipientRows.length} recipients\n`);
 
@@ -167,20 +132,20 @@ export async function sundaySchoolSync() {
       recipientHeader = ensuredRecipientHeader;
     }
 
-    // 5. Process schedule and recipients
+    // 4. Process schedule and recipients
     const processedSchedule = processSchedule(scheduleRows, scheduleHeader);
     console.log(`✅ Processed ${processedSchedule.length} lessons\n`);
 
     const processedRecipients = processRecipients(recipientRows, recipientHeader);
     console.log(`✅ Processed ${processedRecipients.length} recipients\n`);
 
-    // 6. Find upcoming lesson and send WhatsApp reminders
-    console.log('📝 STEP 6: Checking for upcoming lessons...');
+    // 5. Find upcoming lesson and send WhatsApp reminders
+    console.log('📝 STEP 5: Checking for upcoming lessons...');
     const results = await sendSundaySchoolReminders(processedSchedule, processedRecipients);
     console.log(`✅ Reminders complete: sent: ${results.whatsappSent}, failed: ${results.whatsappFailed}\n`);
 
-    // 7. Log to Status Log
-    console.log('📝 STEP 7: Writing to Status Log...');
+    // 6. Log to Status Log
+    console.log('📝 STEP 6: Writing to Status Log...');
     const logRow = [
       DateTime.now().toISO({ suppressMilliseconds: true }),
       processedSchedule.length,
@@ -192,7 +157,7 @@ export async function sundaySchoolSync() {
     await appendSheetRow(sheets, SHEET_NAMES.STATUS_LOG, logRow);
     console.log('✅ Status Log updated\n');
 
-    // 8. Return summary
+    // 7. Return summary
     console.log('='.repeat(80));
     console.log('✅ sundaySchoolSync() COMPLETED SUCCESSFULLY');
     const summary = {
