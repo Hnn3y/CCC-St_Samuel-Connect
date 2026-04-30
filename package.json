@@ -12,7 +12,7 @@
    "license": "ISC",
    "type": "module",
    "dependencies": {
-      "googleapis": "^144.0.0",
+      "googleapis": "^171.4.0",
       "luxon": "^3.5.0"
    }
 }
