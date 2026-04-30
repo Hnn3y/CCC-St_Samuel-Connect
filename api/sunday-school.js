@@ -1,4 +1,4 @@
-import { sundaySchoolSync } from "../index";
+import { sundaySchoolSync } from "../lib/sundaySchool.js";
 
 export default async function handler(req, res) {
   const timestamp = new Date().toISOString();
